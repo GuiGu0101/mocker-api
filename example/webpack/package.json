@@ -4,6 +4,7 @@
   "description": "Mocker API Example",
   "scripts": {
     "start": "webpack-dev-server --progress --open",
+    "start:no-mock": "cross-env MOCK=none webpack-dev-server --progress --open",
     "build": "webpack"
   },
   "keywords": [],
@@ -14,7 +15,8 @@
     "webpack": "^4.15.1",
     "webpack-cli": "^3.0.8",
     "mocker-api": "file:../../",
-    "webpack-dev-server": "^3.1.14"
+    "webpack-dev-server": "^3.1.14",
+    "cross-env": "^5.2.0"
   },
   "dependencies": {}
 }

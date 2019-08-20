@@ -3,6 +3,7 @@ const httpProxy = require('http-proxy');
 const pathToRegexp = require('path-to-regexp');
 const clearModule = require('clear-module');
 const PATH = require('path');
+const fs = require('fs');
 const parse = require('url').parse;
 const chokidar = require('chokidar');
 const color = require('colors-cli/safe');
@@ -32,8 +33,8 @@ function pathMatch(options) {
   }
 }
 
-module.exports = function (app, watchFile, conf = {}) {
-  const watchFiles = Array.isArray(watchFile) ? watchFile : [watchFile];
+module.exports = function (app, watchPath, conf = {}) {
+  const watchFiles = getWatchFile(watchPath);
   if (watchFiles.some(file => !file)) {
     throw new Error('Mocker file does not exist!.');
   }
@@ -47,33 +48,34 @@ module.exports = function (app, watchFile, conf = {}) {
   }
   const {
     changeHost = true,
+    noMock = false,
     proxy: proxyConf = {},
     httpProxy: httpProxyConf = {},
-    bodyParserConf= {},
+    bodyParserConf = {},
     bodyParserJSON = {},
     bodyParserText = {},
     bodyParserRaw = {},
     bodyParserUrlencoded = {},
-  } = mocker._proxy || conf;
-  // 监听配置入口文件所在的目录，一般为认为在配置文件/mock 目录下的所有文件
-  // 加上require.resolve，保证 `./mock/`能够找到`./mock/index.js`，要不然就要监控到上一级目录了
-  const watcher = chokidar.watch(watchFiles.map(watchFile => PATH.dirname(require.resolve(watchFile))));
+  } = conf;
 
-  watcher.on('all', (event, path) => {
-    if (event === 'change' || event === 'add') {
-      try {
-        // 当监听的可能是多个配置文件时，需要清理掉更新文件以及入口文件的缓存，重新获取
-        cleanCache(path);
-        watchFiles.forEach(file => cleanCache(file));
-        mocker = getConfig();
-        console.log(`${color.green_b.black(' Done: ')} Hot Mocker ${color.green(path.replace(process.cwd(), ''))} file replacement success!`);
-      } catch (ex) {
-        console.error(`${color.red_b.black(' Failed: ')} Hot Mocker ${color.red(path.replace(process.cwd(), ''))} file replacement failed!!`);
+  if (!noMock) {
+    // 监听配置入口文件所在的目录，一般为认为在配置文件/mock 目录下的所有文件
+    const watcher = chokidar.watch(watchPath);
+    // 监听文件修改重新加载代码
+    // 配置热更新
+    watcher.on('all', (event, path) => {
+      if (event === 'change' || event === 'add') {
+        try {
+          cleanCache(path);
+          mocker = getConfig();
+          console.log(`${color.green_b.black(' Done: ')} Hot Mocker ${color.green(path.replace(process.cwd(), ''))} file replacement success!`);
+        } catch (ex) {
+          console.error(`${color.red_b.black(' Failed: ')} Hot Mocker ${color.red(path.replace(process.cwd(), ''))} file replacement failed!!`);
+        }
       }
-    }
-  })
-  // 监听文件修改重新加载代码
-  // 配置热更新
+    })
+  }
+
   app.all('/*', (req, res, next) => {
     /**
      * Get Proxy key
@@ -99,7 +101,7 @@ module.exports = function (app, watchFile, conf = {}) {
     }
 
 
-    if (mocker[mockerKey]) {
+    if (mocker[mockerKey] && !noMock) {
       res.setHeader('Access-Control-Allow-Origin', '*');
 
       let bodyParserMethd = bodyParser.json({ ...bodyParserJSON }); // 默认使用json解析
@@ -109,21 +111,21 @@ module.exports = function (app, watchFile, conf = {}) {
        * Issue: https://github.com/jaywcjlove/mocker-api/issues/50
        */
       contentType = contentType && contentType.replace(/;.*$/, '');
-      if(bodyParserConf && bodyParserConf[contentType]) {
+      if (bodyParserConf && bodyParserConf[contentType]) {
         // 如果存在bodyParserConf配置 {'text/plain': 'text','text/html': 'text'}
-        switch(bodyParserConf[contentType]){// 获取bodyParser的方法
-          case 'raw': bodyParserMethd = bodyParser.raw({...bodyParserRaw }); break;
-          case 'text': bodyParserMethd = bodyParser.text({...bodyParserText }); break;
-          case 'urlencoded': bodyParserMethd = bodyParser.urlencoded({extended: false, ...bodyParserUrlencoded }); break;
+        switch (bodyParserConf[contentType]) {// 获取bodyParser的方法
+          case 'raw': bodyParserMethd = bodyParser.raw({ ...bodyParserRaw }); break;
+          case 'text': bodyParserMethd = bodyParser.text({ ...bodyParserText }); break;
+          case 'urlencoded': bodyParserMethd = bodyParser.urlencoded({ extended: false, ...bodyParserUrlencoded }); break;
           case 'json': bodyParserMethd = bodyParser.json({ ...bodyParserJSON });//使用json解析 break;
         }
       } else {
         // 兼容原来的代码,默认解析
         // Compatible with the original code, default parsing
-        switch(contentType){
-          case 'text/plain': bodyParserMethd = bodyParser.raw({...bodyParserRaw }); break;
-          case 'text/html': bodyParserMethd = bodyParser.text({...bodyParserText }); break;
-          case 'application/x-www-form-urlencoded': bodyParserMethd = bodyParser.urlencoded({extended: false, ...bodyParserUrlencoded }); break;
+        switch (contentType) {
+          case 'text/plain': bodyParserMethd = bodyParser.raw({ ...bodyParserRaw }); break;
+          case 'text/html': bodyParserMethd = bodyParser.text({ ...bodyParserText }); break;
+          case 'application/x-www-form-urlencoded': bodyParserMethd = bodyParser.urlencoded({ extended: false, ...bodyParserUrlencoded }); break;
         }
       }
 
@@ -161,7 +163,7 @@ module.exports = function (app, watchFile, conf = {}) {
     // https://github.com/jaywcjlove/webpack-api-mocker/issues/30
     try {
       modulePath = require.resolve(modulePath);
-    } catch (e) {}
+    } catch (e) { }
     var module = require.cache[modulePath];
     if (!module) return;
     // remove reference in module.parent
@@ -177,6 +179,20 @@ module.exports = function (app, watchFile, conf = {}) {
       const mockerItem = require(file);
       return Object.assign(mocker, mockerItem);
     }, {})
+  }
+  function getWatchFile(watchPath) {
+    const files = [];
+    const pa = fs.readdirSync(watchPath);
+    pa.forEach(function (ele, index) {
+      var info = fs.statSync(watchPath + '/' + ele);
+      if (info.isDirectory()) {
+        const test = getWatchFile(watchPath + '/' + ele);
+        files.push.apply(files, test);
+      } else {
+        files.push(`${watchPath}/${ele}`);
+      }
+    });
+    return files;
   }
   return (req, res, next) => {
     next();

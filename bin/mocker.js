@@ -13,7 +13,7 @@ if (!process.argv.slice(2).length) {
 }
 let mockpath = process.argv[2];
 
-mockpath = require.resolve(path.resolve(mockpath));
+mockpath = path.resolve(mockpath);
 
 (async () => {
   const HOST = process.env.HOST || '0.0.0.0';

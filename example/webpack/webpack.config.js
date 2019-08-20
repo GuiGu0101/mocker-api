@@ -14,11 +14,12 @@ module.exports = {
   devtool: 'inline-source-map',
   devServer: {
     before(app){
-      apiMocker(app, path.resolve('./mocker/index.js'), {
+      apiMocker(app, path.resolve('./mocker'), {
         proxy: {
           '/repos/*': 'https://api.github.com/',
         },
         changeHost: true,
+        noMock: process.env.MOCK === 'none'
       })
     }
   },
