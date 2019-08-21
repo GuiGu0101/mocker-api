@@ -1,5 +1,5 @@
 {
-  "name": "mocker-api",
+  "name": "mocker-api-path",
   "version": "1.7.9",
   "description": "This is dev support mock RESTful API.",
   "bin": {
@@ -8,7 +8,7 @@
   "main": "src/index.js",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jaywcjlove/mocker-api.git"
+    "url": "git+https://github.com/GuiGu0101/mocker-api.git"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

@@ -171,9 +171,9 @@ Multi entry `mocker` file watching
 
 ```js
 const apiMocker = require('mocker-api');
-const mockerFile = ['./mock/index.js'];
+const mockerFile = ['./mock'];
 // or
-// const mockerFile = './mock/index.js';
+// const mockerFile = './mock';
 apiMocker(app, mockerFile, proxy)
 ```
 
@@ -187,7 +187,7 @@ apiMocker(app, mockerFile, proxy)
 # Global install dependent.
 npm install mocker-api -g
 # Run server
-mocker ./mocker/index.js
+mocker ./mocker
 ```
 
 Or you can put it the `package.json` config as a current project dependency.
@@ -218,7 +218,7 @@ const express = require('express');
 
 const app = express();
 
-+ apiMocker(app, path.resolve('./mocker/index.js'))
++ apiMocker(app, path.resolve('./mocker'))
 app.listen(8080);
 ```
 
@@ -244,7 +244,7 @@ module.exports = {
 + devServer: {
 +   ...
 +   before(app){
-+     apiMocker(app, path.resolve('./mocker/index.js'), {
++     apiMocker(app, path.resolve('./mocker'), {
 +       proxy: {
 +         '/repos/*': 'https://api.github.com/',
 +         '/:owner/:repo/raw/:ref/*': 'http://127.0.0.1:2018'
