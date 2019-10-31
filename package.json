@@ -1,6 +1,6 @@
 {
   "name": "mocker-api-path",
-  "version": "1.7.9",
+  "version": "1.8.0",
   "description": "This is dev support mock RESTful API.",
   "bin": {
     "mocker": "./bin/mocker.js"
@@ -42,7 +42,12 @@
     "express": "^4.16.4",
     "http-proxy": "1.17.0",
     "local-ip-url": "^1.0.1",
-    "path-to-regexp": "^3.0.0"
+    "lodash": "^4.17.15",
+    "log-update": "^3.3.0",
+    "mockjs": "^1.1.0",
+    "path-to-regexp": "^3.0.0",
+    "request": "^2.88.0",
+    "request-promise": "^4.2.4"
   },
   "devDependencies": {}
 }

@@ -11,9 +11,9 @@ if (!process.argv.slice(2).length) {
   console.log(`E.g: ${color.yellow('mocker <File path>')}\n`);
   return;
 }
-let mockpath = process.argv[2];
+let mockPath = process.argv[2];
 
-mockpath = path.resolve(mockpath);
+mockPath = path.resolve(mockPath);
 
 (async () => {
   const HOST = process.env.HOST || '0.0.0.0';
@@ -34,7 +34,7 @@ mockpath = path.resolve(mockpath);
     next();
   });
 
-  apiMocker(app, mockpath);
+  apiMocker(app, mockPath);
 
   app.listen(DEFAULT_PORT, () => {
     const localIpUrl = prepareUrls({

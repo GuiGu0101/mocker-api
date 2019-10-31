@@ -3,6 +3,7 @@
 node_modules
 npm-debug.log*
 coverage
+_cache
 
 # misc
 .DS_Store

@@ -19,7 +19,11 @@ module.exports = {
           '/repos/*': 'https://api.github.com/',
         },
         changeHost: true,
-        noMock: process.env.MOCK === 'none'
+        noMock: process.env.MOCK === 'none',
+        rap:{
+          url: 'https://rap2.taobao.org',
+          id: 1,
+        }
       })
     }
   },

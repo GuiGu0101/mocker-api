@@ -7,6 +7,9 @@ const fs = require('fs');
 const parse = require('url').parse;
 const chokidar = require('chokidar');
 const color = require('colors-cli/safe');
+const RapClient = require('./rapClient');
+const Mock = require('mockjs');
+const _ = require('lodash');
 
 const proxyHTTP = httpProxy.createProxyServer({});
 let mocker = {};
@@ -32,39 +35,52 @@ function pathMatch(options) {
     }
   }
 }
+const DEFAULT_OPTION = {
+  changeHost: true,
+  noMock: false,
+  proxy: {},
+  httpProxy: {},
+  bodyParserConf: {},
+  bodyParserJSON: {},
+  bodyParserText: {},
+  bodyParserRaw: {},
+  bodyParserUrlencoded: {},
+  rap: { cache: true }
+}
 
-module.exports = function (app, watchPath, conf = {}) {
+function getOption(conf) {
+  const option = _.mergeWith(
+    _.cloneDeep(DEFAULT_OPTION),
+    conf
+  );
+  option.rap.enable = !!option.rap.url && !!option.rap.id && !!option.rap.appId && !!option.rap.appSecret;
+  return option
+}
+
+module.exports = async function (app, watchPath, conf = {}) {
   const watchFiles = getWatchFile(watchPath);
   if (watchFiles.some(file => !file)) {
     throw new Error('Mocker file does not exist!.');
   }
 
   mocker = getConfig();
+  rapMocker = {};
 
   if (!mocker) {
     return (req, res, next) => {
       next();
     }
   }
-  const {
-    changeHost = true,
-    noMock = false,
-    proxy: proxyConf = {},
-    httpProxy: httpProxyConf = {},
-    bodyParserConf = {},
-    bodyParserJSON = {},
-    bodyParserText = {},
-    bodyParserRaw = {},
-    bodyParserUrlencoded = {},
-  } = conf;
 
-  if (!noMock) {
+  config = getOption(conf)
+
+  if (!config.noMock) {
     // 监听配置入口文件所在的目录，一般为认为在配置文件/mock 目录下的所有文件
     const watcher = chokidar.watch(watchPath);
     // 监听文件修改重新加载代码
     // 配置热更新
     watcher.on('all', (event, path) => {
-      if (event === 'change' || event === 'add') {
+      if ((event === 'change' || event === 'add') && path.indexOf('_cache') === -1) {
         try {
           cleanCache(path);
           mocker = getConfig();
@@ -74,13 +90,32 @@ module.exports = function (app, watchPath, conf = {}) {
         }
       }
     })
+    if (config.rap.enable) {
+      const { url: apiUrl, id, appId, appSecret } = config.rap
+      const rapClient = new RapClient({
+        watchPath,
+        apiUrl,
+        id,
+        appId,
+        appSecret
+      })
+      rapMocker = await rapClient.getRapMocker()
+    }
   }
 
   app.all('/*', (req, res, next) => {
+
+    /**
+     * Get Rap2 key
+     */
+    const rapKey = Object.keys(rapMocker).find((kname) => {
+      return !!pathToRegexp(kname.replace((new RegExp('^' + req.method + ' ')), '')).exec(req.path);
+    });
+
     /**
      * Get Proxy key
      */
-    const proxyKey = Object.keys(proxyConf).find((kname) => {
+    const proxyKey = Object.keys(config.proxy).find((kname) => {
       return !!pathToRegexp(kname.replace((new RegExp('^' + req.method + ' ')), '')).exec(req.path);
     });
     /**
@@ -101,31 +136,31 @@ module.exports = function (app, watchPath, conf = {}) {
     }
 
 
-    if (mocker[mockerKey] && !noMock) {
+    if (mocker[mockerKey] && !config.noMock) {
       res.setHeader('Access-Control-Allow-Origin', '*');
 
-      let bodyParserMethd = bodyParser.json({ ...bodyParserJSON }); // 默认使用json解析
+      let bodyParserMethd = bodyParser.json({ ...config.bodyParserJSON }); // 默认使用json解析
       let contentType = req.get('Content-Type');
       /**
        * `application/x-www-form-urlencoded; charset=UTF-8` => `application/x-www-form-urlencoded`
        * Issue: https://github.com/jaywcjlove/mocker-api/issues/50
        */
       contentType = contentType && contentType.replace(/;.*$/, '');
-      if (bodyParserConf && bodyParserConf[contentType]) {
+      if (config.bodyParserConf && config.bodyParserConf[contentType]) {
         // 如果存在bodyParserConf配置 {'text/plain': 'text','text/html': 'text'}
-        switch (bodyParserConf[contentType]) {// 获取bodyParser的方法
-          case 'raw': bodyParserMethd = bodyParser.raw({ ...bodyParserRaw }); break;
-          case 'text': bodyParserMethd = bodyParser.text({ ...bodyParserText }); break;
-          case 'urlencoded': bodyParserMethd = bodyParser.urlencoded({ extended: false, ...bodyParserUrlencoded }); break;
-          case 'json': bodyParserMethd = bodyParser.json({ ...bodyParserJSON });//使用json解析 break;
+        switch (config.bodyParserConf[contentType]) {// 获取bodyParser的方法
+          case 'raw': bodyParserMethd = bodyParser.raw({ ...config.bodyParserRaw }); break;
+          case 'text': bodyParserMethd = bodyParser.text({ ...config.bodyParserText }); break;
+          case 'urlencoded': bodyParserMethd = bodyParser.urlencoded({ extended: false, ...config.bodyParserUrlencoded }); break;
+          case 'json': bodyParserMethd = bodyParser.json({ ...config.bodyParserJSON });//使用json解析 break;
         }
       } else {
         // 兼容原来的代码,默认解析
         // Compatible with the original code, default parsing
         switch (contentType) {
-          case 'text/plain': bodyParserMethd = bodyParser.raw({ ...bodyParserRaw }); break;
-          case 'text/html': bodyParserMethd = bodyParser.text({ ...bodyParserText }); break;
-          case 'application/x-www-form-urlencoded': bodyParserMethd = bodyParser.urlencoded({ extended: false, ...bodyParserUrlencoded }); break;
+          case 'text/plain': bodyParserMethd = bodyParser.raw({ ...config.bodyParserRaw }); break;
+          case 'text/html': bodyParserMethd = bodyParser.text({ ...config.bodyParserText }); break;
+          case 'application/x-www-form-urlencoded': bodyParserMethd = bodyParser.urlencoded({ extended: false, ...config.bodyParserUrlencoded }); break;
         }
       }
 
@@ -138,13 +173,23 @@ module.exports = function (app, watchPath, conf = {}) {
           res.json(result);
         }
       });
-    } else if (proxyKey && proxyConf[proxyKey]) {
-      const currentProxy = proxyConf[proxyKey];
+    } else if (config.rap.enable && !config.noMock && rapKey && rapMocker[rapKey]) {
+      const { cache, url, id } = config.rap;
+      if (cache === false) {
+        proxyHTTP.web(req, res, {
+          target: `${url}/app/mock/${id}`
+        });
+      } else {
+        res.json(Mock.mock(rapMocker[rapKey].data))
+      }
+
+    } else if (proxyKey && config.proxy[proxyKey]) {
+      const currentProxy = config.proxy[proxyKey];
       const url = parse(currentProxy);
-      if (changeHost) {
+      if (config.changeHost) {
         req.headers.host = url.host;
       }
-      const { options: proxyOptions = {}, listeners: proxyListeners = {} } = httpProxyConf;
+      const { options: proxyOptions = {}, listeners: proxyListeners = {} } = config.httpProxy;
 
       Object.keys(proxyListeners).forEach(event => {
         proxyHTTP.on(event, proxyListeners[event]);
@@ -184,12 +229,13 @@ module.exports = function (app, watchPath, conf = {}) {
     const files = [];
     const pa = fs.readdirSync(watchPath);
     pa.forEach(function (ele, index) {
-      var info = fs.statSync(watchPath + '/' + ele);
+      const filePath = PATH.resolve(watchPath, ele)
+      var info = fs.statSync(filePath);
       if (info.isDirectory()) {
-        const test = getWatchFile(watchPath + '/' + ele);
+        const test = getWatchFile(filePath);
         files.push.apply(files, test);
-      } else {
-        files.push(`${watchPath}/${ele}`);
+      } else if (filePath.indexOf('_cache') === -1) {
+        files.push(filePath);
       }
     });
     return files;
