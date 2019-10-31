@@ -57,7 +57,7 @@ function getOption(conf) {
   return option
 }
 
-module.exports = async function (app, watchPath, conf = {}) {
+module.exports = function (app, watchPath, conf = {}) {
   const watchFiles = getWatchFile(watchPath);
   if (watchFiles.some(file => !file)) {
     throw new Error('Mocker file does not exist!.');
@@ -99,7 +99,7 @@ module.exports = async function (app, watchPath, conf = {}) {
         appId,
         appSecret
       })
-      rapMocker = await rapClient.getRapMocker()
+      rapClient.getRapMocker().then((data) => { rapMocker = data })
     }
   }
 
