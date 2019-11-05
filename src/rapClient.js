@@ -3,6 +3,7 @@ const ProgressBar = require('./utils/progressBar');
 const path = require('path')
 const fs = require('fs')
 const color = require('colors-cli/safe');
+const _ = require('lodash');
 
 function objectToMap(object) {
   const map = new Map();
@@ -27,38 +28,54 @@ function logger() {
 
 class RapClient {
   constructor(opt = {}) {
-    const { watchPath, apiUrl, id, appId, appSecret } = opt;
+    const { cachePath, apiUrl, id, appId, appSecret, cache } = opt;
     this.option = {
       apiUrl,
       id,
       appId,
       appSecret,
+      cache
     }
     this.token = '';
-    this.workPath = path.resolve(watchPath || __dirname, './_cache/');
-    logger(`当前缓存目录是: ${this.workPath}`);
+    this.cachePath = path.resolve(cachePath || __dirname, './_cache/');
+    logger(`当前缓存目录是: ${this.cachePath}`);
   }
   async getRapMocker() {
+    const { id, cache } = this.option;
     let paths = {};
     try {
-      const repository = await this.getRepository();
-      paths = await this.transformRepository(repository, true)
+      const repository = await this.getRepository(id);
+      paths = await this.transformRepository(repository, cache)
     } catch (error) {
       logger('远程仓库加载失败，尝试使用本地缓存', error.message);
-      paths = this.getPathsCache();
-      throw error
+      const repoCache = this.getRepoCache(id);
+      paths = this.transformRepoCacheToPaths(repoCache)
     }
     logger('mock数据准备完成')
     return paths
   }
-  getPathsCache(create) {
-    const cacheFile = path.resolve(this.workPath, 'paths.json');
-    let paths = {};
+  getRepoCache(id, create) {
+    const cacheFile = path.resolve(this.cachePath, `repo_${id}.json`);
+    let repo = {};
     if (!fs.existsSync(cacheFile)) {
       logger(!create ? '缓存文件不存在，跳过使用RAP数据' : '');
-      return paths
+      return repo
     }
-    paths = require(cacheFile);
+    repo = require(cacheFile);
+    return repo
+  }
+  transformRepoCacheToPaths(repoCache, checkCollaborators = true) {
+    const { info = {} } = repoCache;
+    const { collaborators = [] } = info;
+    let { paths } = repoCache;
+    if (collaborators.length > 0 && checkCollaborators) {
+      logger('发现协同仓库，读取协同仓库缓存')
+      for (const collaborator of collaborators) {
+        const collaboratorRepo = this.getRepoCache(collaborator.id);
+        const collaboratorPaths = this.transformRepoCacheToPaths(collaboratorRepo, false)
+        paths = _.merge(paths, collaboratorPaths)
+      }
+    }
     return paths
   }
   async getToken() {
@@ -74,12 +91,12 @@ class RapClient {
     logger('RAP2接口访问令牌: ', data.token)
     this.token = data.token
   }
-  async getRepository() {
-    const { apiUrl, id } = this.option;
+  async getRepository(id) {
+    const { apiUrl } = this.option;
     if (!this.token) {
       await this.getToken();
     }
-    logger('获取远程仓库数据')
+    logger('获取远程仓库数据,repo_id:', id)
     const resp = await rp({
       uri: `${apiUrl}/repository/get`,
       qs: { id },
@@ -92,12 +109,12 @@ class RapClient {
 
     return resp.data
   }
-  async transformRepository(repository, canCache) {
+  async transformRepository(repository, canCache, checkCollaborators = true) {
     const pathMap = new Map();
-    const { modules } = repository;
-    const cachePaths = this.getPathsCache(true);
+    const { modules, collaborators } = repository;
+    const { paths: cachePaths } = this.getRepoCache(repository.id, true);
     const cacheMap = objectToMap(cachePaths);
-    logger('创建mock数据')
+    logger('创建mock数据,repo_id:', repository.id)
     modules.forEach(mod => {
       const { interfaces } = mod;
       interfaces.forEach(itf => {
@@ -121,8 +138,23 @@ class RapClient {
     if (canCache) {
       await this.fetchCache(pathMap)
     }
-    const paths = mapToObject(pathMap)
-    this.saveCacheFile('paths.json', JSON.stringify(paths, null, "\t"))
+    let paths = mapToObject(pathMap)
+    this.saveCacheFile(`repo_${repository.id}`, {
+      info: {
+        id: repository.id,
+        name: repository.name,
+        collaborators,
+      },
+      paths
+    })
+    if (collaborators.length > 0 && checkCollaborators) {
+      logger('发现协同仓库，缓存协同仓库')
+      for (const collaborator of collaborators) {
+        const collaboratorRepo = await this.getRepository(collaborator.id);
+        const collaboratorPaths = await this.transformRepository(collaboratorRepo, canCache, false)
+        paths = _.merge(paths, collaboratorPaths)
+      }
+    }
 
     return paths
   }
@@ -152,10 +184,10 @@ class RapClient {
     return mockData
   }
   saveCacheFile(fileName, data) {
-    if (!fs.existsSync(this.workPath)) {
-      fs.mkdirSync(this.workPath);
+    if (!fs.existsSync(this.cachePath)) {
+      fs.mkdirSync(this.cachePath);
     }
-    fs.writeFileSync(path.resolve(this.workPath, fileName), data);
+    fs.writeFileSync(path.resolve(this.cachePath, `${fileName}.json`), JSON.stringify(data, null, "\t"));
   }
 }
 module.exports = RapClient
